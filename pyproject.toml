@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "backtesting-uniswap-v3-strategies"
+name = "liquidity-backtesting"
 version = "0.1.0"
 description = ""
-authors = ["Catalyst <catalyst@xyralabs.ai>"]
+authors = ["Jerzy <jerzybalcerzak@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
