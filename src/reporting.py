@@ -56,8 +56,6 @@ def serialize_actions_to_jsonl(actions: List[BaseAction], file_path: str):
     with open(file_path, "w", encoding="utf-8") as f:
         for action in actions:
             ad = asdict(action)
-            print(ad)
-            # break
             ad["market"] = ad["market"].name
             ad["action_type"] = ad["action_type"].name
             ad["timestamp"] = ad["timestamp"].isoformat()
@@ -359,25 +357,39 @@ def report_strategy_performance(
     actuator_test, actuator_baseline, market_key, strategy_params, strategy_results
 ):
     short_name = strategy_params.get_short_name()
+    safe_short_name = short_name.replace(",", "dot")
+
     results_path = (
-        f"results/{short_name}-{datetime.now().isoformat(timespec='seconds')}"
+        f"results/{safe_short_name}-{datetime.now().isoformat(timespec='seconds')}"
     )
     os.makedirs(results_path, exist_ok=True)
 
-    (Path(results_path) / "params.json").write_text(strategy_params.model_dump_json())
+    rounded_results = {
+        "diff_from_baseline_at_end": round(
+            strategy_results.diff_from_baseline_at_end, 2
+        ),
+        "percent_increase_from_baseline_at_end": round(
+            strategy_results.percent_increase_from_baseline_at_end, 2
+        ),
+    }
 
+    (Path(results_path) / "params.json").write_text(strategy_params.model_dump_json())
     (Path(results_path) / "results_summary.json").write_text(
-        strategy_results.model_dump_json()
+        json.dumps(rounded_results, indent=2)
     )
 
     actuator_test.save_result(path=results_path)
     df_fees = get_fees_dataframe(actuator_test, market_key=market_key)
     df_positions = get_positions_dataframe(actuator_test._action_list)
+
     fig = visualise_strategy(
         df_positions, actuator_test, actuator_baseline, df_fees, market_key
     )
-    html_file = os.path.join(results_path, f"{short_name}.html")
+
+    html_file = os.path.join(results_path, f"{safe_short_name}.html")
     fig.write_html(html_file)
-    jsonl_file = os.path.join(results_path, f"action_list.jsonl")
+
+    jsonl_file = os.path.join(results_path, "action_list.jsonl")
     serialize_actions_to_jsonl(actuator_test._action_list, jsonl_file)
+
     return fig
