@@ -2,13 +2,70 @@ from typing import Any
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from demeter import Actuator
+from demeter import Actuator, BaseAction
 
 import pandas as pd
 from dataclasses import asdict
 
 
 from decimal import Decimal
+
+
+import os
+import json
+from datetime import datetime
+from pathlib import Path
+
+
+import json
+from typing import List
+
+from pydantic import BaseModel
+
+
+class StrategyResults(BaseModel):
+    diff_from_baseline_at_end: float
+    percent_increase_from_baseline_at_end: float
+
+
+from pydantic import BaseModel
+
+
+class StrategyResults(BaseModel):
+    diff_from_baseline_at_end: float
+    percent_increase_from_baseline_at_end: float
+
+
+def calculate_strategy_results(actuator_rolling, actuator_baseline) -> StrategyResults:
+    # Extract net value series from each actuator's account_status_df
+    net_value_series_alt = actuator_rolling.account_status_df["net_value"]
+    net_value_series_np = actuator_baseline.account_status_df["net_value"]
+
+    # Calculate the difference and percent increase at the end using .iloc for positional indexing
+    diff = net_value_series_alt.iloc[-1] - net_value_series_np.iloc[-1]
+    percent_increase = diff / net_value_series_np.iloc[-1]
+
+    # Return the results wrapped in the StrategyResults model
+    return StrategyResults(
+        diff_from_baseline_at_end=diff,
+        percent_increase_from_baseline_at_end=percent_increase,
+    )
+
+
+def serialize_actions_to_jsonl(actions: List[BaseAction], file_path: str):
+    with open(file_path, "w", encoding="utf-8") as f:
+        for action in actions:
+            ad = asdict(action)
+            print(ad)
+            # break
+            ad["market"] = ad["market"].name
+            ad["action_type"] = ad["action_type"].name
+            ad["timestamp"] = ad["timestamp"].isoformat()
+            for k, v in ad.items():
+                if isinstance(v, Decimal):
+                    ad[k] = float(v)
+            json.dump(ad, f, ensure_ascii=False)
+            f.write("\n")
 
 
 def get_fees_dataframe(actuator, market_key):
@@ -295,4 +352,32 @@ def visualise_strategy(
         range=[df_fees.index.min(), df_fees.index.max()], row=3, col=1, type="date"
     )
 
+    return fig
+
+
+def report_strategy_performance(
+    actuator_test, actuator_baseline, market_key, strategy_params, strategy_results
+):
+    short_name = strategy_params.get_short_name()
+    results_path = (
+        f"results/{short_name}-{datetime.now().isoformat(timespec='seconds')}"
+    )
+    os.makedirs(results_path, exist_ok=True)
+
+    (Path(results_path) / "params.json").write_text(strategy_params.model_dump_json())
+
+    (Path(results_path) / "results_summary.json").write_text(
+        strategy_results.model_dump_json()
+    )
+
+    actuator_test.save_result(path=results_path)
+    df_fees = get_fees_dataframe(actuator_test, market_key=market_key)
+    df_positions = get_positions_dataframe(actuator_test._action_list)
+    fig = visualise_strategy(
+        df_positions, actuator_test, actuator_baseline, df_fees, market_key
+    )
+    html_file = os.path.join(results_path, f"{short_name}.html")
+    fig.write_html(html_file)
+    jsonl_file = os.path.join(results_path, f"action_list.jsonl")
+    serialize_actions_to_jsonl(actuator_test._action_list, jsonl_file)
     return fig

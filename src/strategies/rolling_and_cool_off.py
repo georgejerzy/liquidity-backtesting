@@ -3,14 +3,24 @@ from demeter import Strategy, Snapshot, simple_moving_average
 from datetime import timedelta
 from decimal import Decimal
 
+from .entities import StrategyParams
+
+
+class RollingAndCoolOffStrategyParams(StrategyParams):
+    percent_range: float
+    rebalance_interval: timedelta
+
+    def get_short_name(self):
+        hours = self.rebalance_interval.total_seconds() / 3600
+
+        return f"{self.name}_{str(self.percent_range).replace('.','dot')}_{hours:.0f}h_{int(self.initial_investment_usd)}USD"
+
 
 class RollingAndCoolOffStrategy(Strategy):
-    def __init__(
-        self, market_key, percent_range=0.05, rebalance_interval=timedelta(hours=4)
-    ):
+    def __init__(self, market_key, strategy_params: RollingAndCoolOffStrategyParams):
         super().__init__()
-        self.percent_range = Decimal(str(percent_range))
-        self.rebalance_interval = rebalance_interval
+        self.percent_range = Decimal(str(strategy_params.percent_range))
+        self.rebalance_interval = strategy_params.rebalance_interval
         self.wait_until = None
         self.last_rebalance_time = None
         self.market_key = market_key
