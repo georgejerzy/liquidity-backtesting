@@ -9,18 +9,20 @@ from .entities import StrategyParams
 class RollingAndCoolOffStrategyParams(StrategyParams):
     percent_range: float
     rebalance_interval: timedelta
+    moving_average_window_hours: int
+    cooldown_hours: int
 
     def get_short_name(self):
-        hours = self.rebalance_interval.total_seconds() / 3600
+        rebalance_hours = self.rebalance_interval.total_seconds() / 3600
 
-        return f"{self.name}_{str(self.percent_range).replace('.','dot')}_{hours:.0f}h_{int(self.initial_investment_usd)}USD"
+        return f"{self.name}_{str(self.percent_range).replace('.','dot')}_reb{rebalance_hours:.0f}h_cool{self.cooldown_hours:.0f}h_win{self.moving_average_window_hours:.0f}h_{int(self.initial_investment_usd)}USD"
 
 
 class RollingAndCoolOffStrategy(Strategy):
     def __init__(self, market_key, strategy_params: RollingAndCoolOffStrategyParams):
         super().__init__()
         self.percent_range = Decimal(str(strategy_params.percent_range))
-        self.rebalance_interval = strategy_params.rebalance_interval
+        self.strategy_params = strategy_params
         self.wait_until = None
         self.last_rebalance_time = None
         self.market_key = market_key
@@ -30,7 +32,10 @@ class RollingAndCoolOffStrategy(Strategy):
             self.market_key,
             "rolling_avg",
             simple_moving_average(
-                self.data[self.market_key].price, window=timedelta(hours=8)
+                self.data[self.market_key].price,
+                window=timedelta(
+                    hours=self.strategy_params.moving_average_window_hours
+                ),
             ),
         )
 
@@ -72,12 +77,15 @@ class RollingAndCoolOffStrategy(Strategy):
             elif current_price < lower_price:
                 market.remove_all_liquidity()
                 market.even_rebalance(current_price)
-                self.wait_until = current_time + timedelta(hours=12)
+                self.wait_until = current_time + timedelta(
+                    hours=self.strategy_params.cooldown_hours
+                )
                 self.last_rebalance_time = current_time
                 return
 
         needs_rebalance = (self.last_rebalance_time is None) or (
-            (current_time - self.last_rebalance_time) >= self.rebalance_interval
+            (current_time - self.last_rebalance_time)
+            >= self.strategy_params.rebalance_interval
         )
         # Open new position only if there is no current position, not in cooldown, and rebalance interval elapsed
         if needs_rebalance:
